@@ -1,0 +1,117 @@
+import socket
+import time
+import threading
+from collections import deque
+from tqdm import tqdm
+
+# Configuration
+PORT = 5005
+PACKET_SIZE = 65535        # Big enough for any UDP datagram
+IDLE_TIMEOUT = 1.0         # Seconds of silence → burst ends
+
+def receiver_function(stop_event, statistics, lock):
+    # Set up UDP socket for broadcast
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 0)
+    except Exception:
+        pass
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 256 * 1024)
+    sock.bind(("", PORT))
+    sock.settimeout(IDLE_TIMEOUT)
+
+    burst_count = 0
+    burst_start = None
+    burst_last = None
+    thread_name = threading.current_thread().name
+
+    print(f"{thread_name}: Listening for broadcasts on port {PORT}...")
+
+    while not stop_event.is_set():
+        try:
+            data, addr = sock.recvfrom(PACKET_SIZE)
+            now = time.time()
+            print(f"{thread_name}: Received packet from {addr}")
+            if burst_count == 0:
+                burst_start = now
+            burst_last = now
+            burst_count += 1
+        except socket.timeout:
+            if burst_count > 0:
+                elapsed = burst_last - burst_start
+                mb_recv = burst_count * PACKET_SIZE / (1024 * 1024)
+                mbps = mb_recv * 8 / elapsed
+                with lock:
+                    statistics.append((thread_name, burst_start, burst_last, burst_count, mb_recv, mbps))
+                print(f"{thread_name}: Burst ended. Packets: {burst_count}, MiB: {mb_recv:.2f}, Mbps: {mbps:.2f}")
+                burst_count = 0
+                burst_start = None
+                burst_last = None
+            if stop_event.is_set():
+                break
+            print(f"{thread_name}: Waiting for data...")
+        except OSError as e:
+            if getattr(e, 'winerror', None) == 10040:
+                now = time.time()
+                if burst_count == 0:
+                    burst_start = now
+                burst_last = now
+                burst_count += 1
+                print(f"{thread_name}: Received oversized packet")
+            else:
+                raise
+    sock.close()
+    print(f"{thread_name}: Stopped.")
+
+def main():
+    # Prompt user for number of threads
+    N = int(input("Enter the number of threads: "))
+    
+    # Initialize shared variables
+    stop_event = threading.Event()
+    statistics = deque()
+    lock = threading.Lock()
+    threads = []
+
+    # Create threads
+    for i in range(N):
+        thread = threading.Thread(
+            target=receiver_function,
+            args=(stop_event, statistics, lock),
+            name=f"Thread-{i+1}"
+        )
+        threads.append(thread)
+
+    # Start threads with progress bar
+    for thread in tqdm(threads, desc="Starting threads"):
+        thread.start()
+
+    print(f"Listening for broadcasts on port {PORT} with {N} threads. Press Ctrl+C to stop...")
+
+    # Wait for interruption
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\nInterrupted by user, stopping threads...")
+        stop_event.set()
+        for thread in threads:
+            thread.join()
+
+    # Display throughput table
+    print("\nSummary of Burst Throughputs:")
+    print("{:<10} {:<20} {:<20} {:<10} {:<10} {:<10}".format(
+        "Thread", "Start Time", "End Time", "Packets", "MiB", "Mbps"
+    ))
+    for stat in sorted(statistics, key=lambda x: x[1]):  # Sort by burst_start
+        thread_name, burst_start, burst_last, burst_count, mb_recv, mbps = stat
+        start_str = time.strftime('%H:%M:%S', time.localtime(burst_start))
+        end_str = time.strftime('%H:%M:%S', time.localtime(burst_last))
+        print("{:<10} {:<20} {:<20} {:<10} {:<10.2f} {:<10.2f}".format(
+            thread_name, start_str, end_str, burst_count, mb_recv, mbps
+        ))
+
+if __name__ == "__main__":
+    main()
