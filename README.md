@@ -10,7 +10,7 @@
 
 ## Technical Content & Methodology
 - [ ] Add substantial technical depth to experimental setup explanation
-- [ ] Provide detailed NS3 simulation parameters and configuration
+- [] Provide detailed NS3 simulation parameters and configuration
 - [ ] Resolve the throughput discrepancy issue
 - [ ] Justify the "60 threads" limitation with proper analysis
 - [ ] Compare results with theoretical limits
@@ -37,12 +37,12 @@
 - [ ] Complete any incomplete references
 
 ## Writing Quality & Style
-- [ ] Fix grammatical errors (e.g., "my default" → "by default")
-- [ ] Use consistent terminology throughout (Wi-Fi vs WiFi)
-- [ ] Replace informal language with academic tone
-- [ ] Remove unsupported claims (e.g., "Matlab is renowned" without citation)
-- [ ] Fix awkward phrasing (e.g., "hybrid approach that can mimic simulation...")
-- [ ] Proofread entire document for language consistency
+- [x] Fix grammatical errors (e.g., "my default" → "by default")
+- [x] Use consistent terminology throughout (Wi-Fi vs WiFi)
+- [x] Replace informal language with academic tone
+- [x] Remove unsupported claims (e.g., "Matlab is renowned" without citation)
+- [x] Fix awkward phrasing (e.g., "hybrid approach that can mimic simulation...")
+- [x] Proofread entire document for language consistency
 
 ## Conclusion & Summary
 - [ ] Expand conclusion section
