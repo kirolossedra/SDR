@@ -10,7 +10,7 @@
 
 ## Technical Content & Methodology
 - [ ] Add substantial technical depth to experimental setup explanation
-- [] Provide detailed NS3 simulation parameters and configuration
+- [x] Provide detailed NS3 simulation parameters and configuration
 - [ ] Resolve the throughput discrepancy issue
 - [ ] Justify the "60 threads" limitation with proper analysis
 - [ ] Compare results with theoretical limits
