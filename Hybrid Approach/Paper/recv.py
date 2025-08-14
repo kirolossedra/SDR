@@ -22,7 +22,10 @@ def receiver_function(stop_event, statistics, lock):
         pass
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 256 * 1024)
-    sock.bind(("", PORT))
+    try:
+        sock.bind(("", PORT))
+    except:
+        pass
     sock.settimeout(IDLE_TIMEOUT)
 
     burst_count = 0
@@ -142,7 +145,7 @@ def find_optimal_threads():
     optimal_threads = THREAD_INCREMENT
     test_results = []
     
-    while current_threads <= 50:  # Safety limit
+    while True:  # Keep going until degradation is found
         print(f"\n{'='*50}")
         print(f"STAGE: Testing {current_threads} threads")
         print(f"{'='*50}")
@@ -182,6 +185,11 @@ def find_optimal_threads():
         # Move to next thread count
         current_threads += THREAD_INCREMENT
         print(f"➡️  Next test: {current_threads} threads")
+        
+        # Safety check to prevent infinite loop
+        if current_threads > 200:
+            print("Reached safety limit of 200 threads")
+            break
         
         # Clean pause between tests
         time.sleep(2)
