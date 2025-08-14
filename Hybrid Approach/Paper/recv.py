@@ -12,79 +12,53 @@ TEST_DURATION = 7          # Seconds to test each thread count
 THREAD_INCREMENT = 5       # Increase threads by this amount each test
 DEGRADATION_THRESHOLD = 0.15  # 15% throughput degradation threshold
 
-# Global socket that all threads will share
-global_socket = None
-socket_lock = threading.Lock()
-
-def create_shared_socket():
-    """Create a single shared socket for all threads"""
-    global global_socket
-    if global_socket is None:
-        global_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        global_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        try:
-            global_socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 0)
-        except Exception:
-            pass
-        global_socket.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        global_socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 256 * 1024)
-        global_socket.bind(("", PORT))
-        global_socket.settimeout(0.1)  # Shorter timeout for better responsiveness
-    return global_socket
-
-def close_shared_socket():
-    """Close the shared socket"""
-    global global_socket
-    if global_socket:
-        global_socket.close()
-        global_socket = None
-
 def receiver_function(stop_event, statistics, lock):
-    """Modified receiver that shares a single socket among threads"""
+    # Set up UDP socket for broadcast
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 0)
+    except Exception:
+        pass
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 256 * 1024)
+    sock.bind(("", PORT))
+    sock.settimeout(IDLE_TIMEOUT)
+
     burst_count = 0
     burst_start = None
     burst_last = None
     thread_name = threading.current_thread().name
-    
-    sock = create_shared_socket()
 
     while not stop_event.is_set():
         try:
-            with socket_lock:  # Only one thread can receive at a time
-                if stop_event.is_set():
-                    break
-                try:
-                    data, addr = sock.recvfrom(PACKET_SIZE)
-                    now = time.time()
-                    if burst_count == 0:
-                        burst_start = now
-                    burst_last = now
-                    burst_count += 1
-                except socket.timeout:
-                    if burst_count > 0:
-                        elapsed = burst_last - burst_start
-                        mb_recv = burst_count * PACKET_SIZE / (1024 * 1024)
-                        mbps = mb_recv * 8 / elapsed
-                        with lock:
-                            statistics.append((thread_name, burst_start, burst_last, burst_count, mb_recv, mbps))
-                        burst_count = 0
-                        burst_start = None
-                        burst_last = None
-                except OSError as e:
-                    if getattr(e, 'winerror', None) == 10040:
-                        now = time.time()
-                        if burst_count == 0:
-                            burst_start = now
-                        burst_last = now
-                        burst_count += 1
-                    else:
-                        if not stop_event.is_set():
-                            print(f"{thread_name}: Socket error: {e}")
-                        break
-        except Exception as e:
-            if not stop_event.is_set():
-                print(f"{thread_name}: Error: {e}")
-            break
+            data, addr = sock.recvfrom(PACKET_SIZE)
+            now = time.time()
+            if burst_count == 0:
+                burst_start = now
+            burst_last = now
+            burst_count += 1
+        except socket.timeout:
+            if burst_count > 0:
+                elapsed = burst_last - burst_start
+                mb_recv = burst_count * PACKET_SIZE / (1024 * 1024)
+                mbps = mb_recv * 8 / elapsed
+                with lock:
+                    statistics.append((thread_name, burst_start, burst_last, burst_count, mb_recv, mbps))
+                burst_count = 0
+                burst_start = None
+                burst_last = None
+            if stop_event.is_set():
+                break
+        except OSError as e:
+            if getattr(e, 'winerror', None) == 10040:
+                now = time.time()
+                if burst_count == 0:
+                    burst_start = now
+                burst_last = now
+                burst_count += 1
+            else:
+                raise
     
     # Handle final burst if any
     if burst_count > 0:
@@ -93,6 +67,8 @@ def receiver_function(stop_event, statistics, lock):
         mbps = mb_recv * 8 / elapsed
         with lock:
             statistics.append((thread_name, burst_start, burst_last, burst_count, mb_recv, mbps))
+    
+    sock.close()
 
 def calculate_total_throughput(statistics):
     """Calculate total throughput from all bursts in the statistics"""
@@ -105,17 +81,12 @@ def calculate_total_throughput(statistics):
     return total_mbps, total_packets
 
 def test_thread_count(num_threads):
-    """Test a specific number of threads for TEST_DURATION seconds"""
-    print(f"\n{'='*50}")
-    print(f"Testing with {num_threads} threads...")
-    print(f"{'='*50}")
+    """Test a specific number of threads - completely clean test"""
+    print(f"\nTesting {num_threads} threads for {TEST_DURATION} seconds...")
     
-    # Close any existing socket
-    close_shared_socket()
-    
-    # Initialize shared variables
+    # COMPLETELY FRESH START - new everything
     stop_event = threading.Event()
-    statistics = deque()
+    statistics = deque()  # Fresh statistics
     lock = threading.Lock()
     threads = []
 
@@ -128,64 +99,55 @@ def test_thread_count(num_threads):
         )
         threads.append(thread)
 
-    # Start threads
-    print(f"Starting {num_threads} threads...")
+    # Start all threads
     for thread in threads:
         thread.start()
 
-    print(f"Listening for {TEST_DURATION} seconds on port {PORT}...")
+    # Let threads fully initialize and start receiving
+    time.sleep(1)
     
-    # Wait for test duration
+    # CLEAR ANY STARTUP RESIDUE - reset statistics after initialization
+    with lock:
+        statistics.clear()  # Start measurement from clean slate
+    
+    print(f"Measurement started for {num_threads} threads...")
+    
+    # ACTUAL MEASUREMENT PERIOD - exactly TEST_DURATION seconds
     time.sleep(TEST_DURATION)
     
     # Stop threads
-    print("Stopping threads...")
     stop_event.set()
     for thread in threads:
-        thread.join(timeout=2.0)  # Don't wait forever
+        thread.join(timeout=2.0)
 
-    # Calculate total throughput
+    # Calculate results from this clean measurement period
     total_throughput, total_packets = calculate_total_throughput(statistics)
     
-    print(f"Test completed. Packets received: {total_packets}, Total throughput: {total_throughput:.2f} Mbps")
+    print(f"RESULT: {num_threads} threads -> {total_throughput:.2f} Mbps ({total_packets} packets)")
     
-    # Display burst details if any
-    if statistics:
-        print(f"Number of bursts detected: {len(statistics)}")
-        print("Recent burst details:")
-        print("{:<6} {:<12} {:<12} {:<8} {:<8} {:<10}".format(
-            "Thread", "Start", "End", "Packets", "MiB", "Mbps"
-        ))
-        # Show last few bursts
-        recent_stats = list(statistics)[-min(5, len(statistics)):]
-        for stat in recent_stats:
-            thread_name, burst_start, burst_last, burst_count, mb_recv, mbps = stat
-            start_str = time.strftime('%H:%M:%S', time.localtime(burst_start))
-            end_str = time.strftime('%H:%M:%S', time.localtime(burst_last))
-            print("{:<6} {:<12} {:<12} {:<8} {:<8.2f} {:<10.2f}".format(
-                thread_name, start_str, end_str, burst_count, mb_recv, mbps
-            ))
-    else:
-        print("⚠️  No data received during test period - check if broadcaster is running!")
-    
-    # Close socket after test
-    close_shared_socket()
+    # Clean shutdown - let everything close properly
+    time.sleep(1)
     
     return total_throughput, total_packets
 
 def find_optimal_threads():
-    """Find the optimal number of threads before throughput degrades"""
-    print("Starting automatic thread optimization test...")
-    print(f"Will test thread counts in increments of {THREAD_INCREMENT}")
-    print(f"Looking for degradation threshold of {DEGRADATION_THRESHOLD*100}%")
-    print("⚠️  Make sure your UDP broadcaster is running and sending to this port!")
+    """Find the optimal number of threads with fair measurements"""
+    print("UDP Thread Optimization - Finding Optimal Thread Count")
+    print("=" * 60)
+    print(f"Testing {TEST_DURATION}s periods with {THREAD_INCREMENT} thread increments")
+    print(f"Looking for >{DEGRADATION_THRESHOLD*100}% throughput degradation")
     
     baseline_throughput = None
     current_threads = THREAD_INCREMENT
     optimal_threads = THREAD_INCREMENT
     test_results = []
     
-    while True:
+    while current_threads <= 50:  # Safety limit
+        print(f"\n{'='*50}")
+        print(f"STAGE: Testing {current_threads} threads")
+        print(f"{'='*50}")
+        
+        # Run completely clean test
         throughput, packets = test_thread_count(current_threads)
         test_results.append((current_threads, throughput, packets))
         
@@ -193,76 +155,58 @@ def find_optimal_threads():
             if throughput > 0:
                 baseline_throughput = throughput
                 optimal_threads = current_threads
-                print(f"\n✅ Baseline established: {baseline_throughput:.2f} Mbps with {current_threads} threads")
+                print(f"✅ BASELINE: {baseline_throughput:.2f} Mbps with {current_threads} threads")
             else:
-                print(f"\n⚠️  No throughput detected with {current_threads} threads - continuing...")
+                print(f"⚠️  No throughput detected - check broadcaster")
         else:
             # Check for degradation
             if baseline_throughput > 0:
                 degradation = (baseline_throughput - throughput) / baseline_throughput
-                improvement = (throughput - baseline_throughput) / baseline_throughput
+                change_pct = ((throughput - baseline_throughput) / baseline_throughput) * 100
                 
-                print(f"\nThroughput: {throughput:.2f} Mbps (Change: {improvement*100:+.1f}%)")
+                print(f"Change vs baseline: {change_pct:+.1f}%")
                 
                 if degradation > DEGRADATION_THRESHOLD:
                     print(f"\n🚨 DEGRADATION DETECTED!")
-                    print(f"Throughput dropped by {degradation*100:.1f}% with {current_threads} threads")
-                    print(f"Optimal thread count: {optimal_threads}")
+                    print(f"Throughput dropped {degradation*100:.1f}% with {current_threads} threads")
+                    print(f"OPTIMAL THREAD COUNT: {optimal_threads}")
                     break
                 else:
-                    # Update optimal if throughput improved significantly
-                    if throughput > baseline_throughput:
-                        baseline_throughput = throughput
+                    # Update optimal if performance is still good
+                    if throughput >= baseline_throughput * 0.98:  # Within 2%
                         optimal_threads = current_threads
-                        print(f"🚀 New best throughput: {baseline_throughput:.2f} Mbps")
-                    elif throughput >= baseline_throughput * (1 - DEGRADATION_THRESHOLD/3):
-                        optimal_threads = current_threads  # Still acceptable
-            else:
-                print("Warning: Baseline throughput was 0, continuing...")
+                        if throughput > baseline_throughput:
+                            baseline_throughput = throughput
+                            print(f"🚀 New best: {baseline_throughput:.2f} Mbps")
         
-        # Increase thread count for next test
+        # Move to next thread count
         current_threads += THREAD_INCREMENT
+        print(f"➡️  Next test: {current_threads} threads")
         
-        # Safety check
-        if current_threads > 50:
-            print("Reached maximum test limit of 50 threads")
-            break
-        
-        print(f"\n➡️  Next: Testing {current_threads} threads...")
-        time.sleep(1)  # Brief pause between tests
+        # Clean pause between tests
+        time.sleep(2)
     
-    # Display summary
+    # Final summary
     print(f"\n{'='*60}")
-    print("TEST RESULTS SUMMARY:")
-    print("{:<8} {:<15} {:<10}".format("Threads", "Throughput (Mbps)", "Packets"))
-    print("-" * 35)
-    for threads, mbps, packets in test_results:
-        marker = " ← OPTIMAL" if threads == optimal_threads else ""
-        print("{:<8} {:<15.2f} {:<10}{marker}".format(threads, mbps, packets, marker=marker))
+    print("FINAL RESULTS:")
+    print("{:<10} {:<15} {:<10} {:<10}".format("Threads", "Throughput", "Packets", "Status"))
+    print("-" * 50)
     
-    print(f"\nFinal optimal thread count: {optimal_threads}")
+    for threads, mbps, packets in test_results:
+        status = "OPTIMAL" if threads == optimal_threads else ""
+        print("{:<10} {:<15.2f} {:<10} {:<10}".format(threads, mbps, packets, status))
+    
     return optimal_threads
 
 def main():
-    print("UDP Broadcast Receiver - Auto Thread Optimization")
-    print("=" * 60)
-    
     try:
         optimal_threads = find_optimal_threads()
-        
-        print(f"\n{'='*60}")
-        print(f"OPTIMIZATION COMPLETE")
-        print(f"Optimal number of threads: {optimal_threads}")
-        print(f"{'='*60}")
+        print(f"\n🏆 FINAL ANSWER: {optimal_threads} threads is optimal")
         
     except KeyboardInterrupt:
-        print("\nOptimization interrupted by user.")
-        close_shared_socket()
+        print("\nInterrupted by user")
     except Exception as e:
-        print(f"Error during optimization: {e}")
-        close_shared_socket()
-    finally:
-        close_shared_socket()
+        print(f"Error: {e}")
 
 if __name__ == "__main__":
     main()
