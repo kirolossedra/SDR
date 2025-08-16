@@ -5,6 +5,8 @@ from collections import deque
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
 import queue
+import subprocess
+import platform
 
 class UDPReceiverGUI:
     def __init__(self, root):
@@ -36,23 +38,62 @@ class UDPReceiverGUI:
         config_frame = ttk.LabelFrame(main_frame, text="Configuration", padding="10")
         config_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
         
+        # Network Configuration Frame
+        network_frame = ttk.LabelFrame(config_frame, text="Network Settings", padding="5")
+        network_frame.grid(row=0, column=0, columnspan=6, sticky=(tk.W, tk.E), pady=(0, 10))
+        
+        # DHCP/Static toggle
+        self.ip_mode_var = tk.StringVar(value="DHCP")
+        dhcp_radio = ttk.Radiobutton(network_frame, text="DHCP", variable=self.ip_mode_var, 
+                                    value="DHCP", command=self.toggle_ip_mode)
+        dhcp_radio.grid(row=0, column=0, padx=(0, 10))
+        
+        static_radio = ttk.Radiobutton(network_frame, text="Static IP", variable=self.ip_mode_var, 
+                                      value="Static", command=self.toggle_ip_mode)
+        static_radio.grid(row=0, column=1, padx=(0, 20))
+        
+        # Static IP configuration (initially disabled)
+        ttk.Label(network_frame, text="IP:").grid(row=0, column=2, padx=(0, 2))
+        self.ip_var = tk.StringVar(value="192.168.1.100")
+        self.ip_entry = ttk.Entry(network_frame, textvariable=self.ip_var, width=12, state='disabled')
+        self.ip_entry.grid(row=0, column=3, padx=(0, 10))
+        
+        ttk.Label(network_frame, text="Subnet:").grid(row=0, column=4, padx=(0, 2))
+        self.subnet_var = tk.StringVar(value="255.255.255.0")
+        self.subnet_entry = ttk.Entry(network_frame, textvariable=self.subnet_var, width=12, state='disabled')
+        self.subnet_entry.grid(row=0, column=5, padx=(0, 10))
+        
+        ttk.Label(network_frame, text="Gateway:").grid(row=0, column=6, padx=(0, 2))
+        self.gateway_var = tk.StringVar(value="192.168.1.1")
+        self.gateway_entry = ttk.Entry(network_frame, textvariable=self.gateway_var, width=12, state='disabled')
+        self.gateway_entry.grid(row=0, column=7, padx=(0, 10))
+        
+        # Apply network settings button
+        self.apply_network_btn = ttk.Button(network_frame, text="Apply Network Settings", 
+                                           command=self.apply_network_settings, state='disabled')
+        self.apply_network_btn.grid(row=0, column=8, padx=(10, 0))
+        
+        # UDP Configuration Frame
+        udp_frame = ttk.Frame(config_frame)
+        udp_frame.grid(row=1, column=0, columnspan=6, sticky=(tk.W, tk.E), pady=(5, 0))
+        
         # Port input
-        ttk.Label(config_frame, text="Port:").grid(row=0, column=0, sticky=tk.W, padx=(0, 5))
+        ttk.Label(udp_frame, text="Port:").grid(row=0, column=0, sticky=tk.W, padx=(0, 5))
         self.port_var = tk.StringVar(value="5005")
-        port_entry = ttk.Entry(config_frame, textvariable=self.port_var, width=10)
+        port_entry = ttk.Entry(udp_frame, textvariable=self.port_var, width=10)
         port_entry.grid(row=0, column=1, sticky=tk.W, padx=(0, 20))
         
         # Thread count input
-        ttk.Label(config_frame, text="Number of Threads:").grid(row=0, column=2, sticky=tk.W, padx=(0, 5))
+        ttk.Label(udp_frame, text="Number of Threads:").grid(row=0, column=2, sticky=tk.W, padx=(0, 5))
         self.threads_var = tk.StringVar(value="4")
-        threads_entry = ttk.Entry(config_frame, textvariable=self.threads_var, width=10)
+        threads_entry = ttk.Entry(udp_frame, textvariable=self.threads_var, width=10)
         threads_entry.grid(row=0, column=3, sticky=tk.W, padx=(0, 20))
         
         # Control buttons
-        self.start_button = ttk.Button(config_frame, text="Start Listening", command=self.start_listening)
+        self.start_button = ttk.Button(udp_frame, text="Start Listening", command=self.start_listening)
         self.start_button.grid(row=0, column=4, padx=(0, 10))
         
-        self.stop_button = ttk.Button(config_frame, text="Stop Listening", command=self.stop_listening, state='disabled')
+        self.stop_button = ttk.Button(udp_frame, text="Stop Listening", command=self.stop_listening, state='disabled')
         self.stop_button.grid(row=0, column=5)
         
         # Status
@@ -282,6 +323,105 @@ class UDPReceiverGUI:
         # Update statistics display
         self.show_all_stats()
         self.log_message("All threads stopped. Statistics updated.")
+        
+    def toggle_ip_mode(self):
+        """Toggle between DHCP and Static IP mode"""
+        mode = self.ip_mode_var.get()
+        if mode == "Static":
+            self.ip_entry.config(state='normal')
+            self.subnet_entry.config(state='normal')
+            self.gateway_entry.config(state='normal')
+            self.apply_network_btn.config(state='normal')
+        else:
+            self.ip_entry.config(state='disabled')
+            self.subnet_entry.config(state='disabled')
+            self.gateway_entry.config(state='disabled')
+            self.apply_network_btn.config(state='normal')  # Still allow applying DHCP
+            
+    def get_wifi_interface_name(self):
+        """Get the WiFi interface name (Windows specific)"""
+        try:
+            result = subprocess.run(['netsh', 'wlan', 'show', 'interfaces'], 
+                                  capture_output=True, text=True, check=True)
+            lines = result.stdout.split('\n')
+            for line in lines:
+                if 'Name' in line and 'Wi-Fi' in line:
+                    return line.split(':')[-1].strip()
+                elif 'Name' in line and ('Wireless' in line or 'WLAN' in line):
+                    return line.split(':')[-1].strip()
+            # Fallback - try common names
+            return "Wi-Fi"
+        except:
+            return "Wi-Fi"  # Default fallback
+            
+    def apply_network_settings(self):
+        """Apply network settings (requires admin privileges)"""
+        if platform.system() != 'Windows':
+            messagebox.showerror("Error", "Network configuration is currently only supported on Windows")
+            return
+            
+        mode = self.ip_mode_var.get()
+        interface_name = self.get_wifi_interface_name()
+        
+        try:
+            if mode == "DHCP":
+                # Set to DHCP
+                subprocess.run(['netsh', 'interface', 'ip', 'set', 'address', 
+                              interface_name, 'dhcp'], check=True)
+                subprocess.run(['netsh', 'interface', 'ip', 'set', 'dns', 
+                              interface_name, 'dhcp'], check=True)
+                self.log_message(f"Successfully set {interface_name} to DHCP")
+                messagebox.showinfo("Success", f"Network interface '{interface_name}' set to DHCP")
+                
+            else:  # Static
+                ip = self.ip_var.get().strip()
+                subnet = self.subnet_var.get().strip()
+                gateway = self.gateway_var.get().strip()
+                
+                # Validate IP addresses
+                if not self.validate_ip(ip) or not self.validate_ip(subnet) or not self.validate_ip(gateway):
+                    messagebox.showerror("Error", "Please enter valid IP addresses")
+                    return
+                
+                # Set static IP
+                subprocess.run(['netsh', 'interface', 'ip', 'set', 'address', 
+                              interface_name, 'static', ip, subnet, gateway], check=True)
+                
+                # Set DNS (optional - using Google DNS as default)
+                subprocess.run(['netsh', 'interface', 'ip', 'set', 'dns', 
+                              interface_name, 'static', '8.8.8.8'], check=True)
+                subprocess.run(['netsh', 'interface', 'ip', 'add', 'dns', 
+                              interface_name, '8.8.4.4', 'index=2'], check=True)
+                
+                self.log_message(f"Successfully set {interface_name} to static IP: {ip}")
+                messagebox.showinfo("Success", f"Network interface '{interface_name}' configured:\n"
+                                               f"IP: {ip}\nSubnet: {subnet}\nGateway: {gateway}")
+                
+        except subprocess.CalledProcessError as e:
+            error_msg = "Failed to apply network settings. This usually means:\n\n" \
+                       "1. The application needs to run as Administrator\n" \
+                       "2. The WiFi interface name couldn't be detected\n" \
+                       "3. Invalid network parameters\n\n" \
+                       f"Error: {e}"
+            messagebox.showerror("Network Configuration Error", error_msg)
+            self.log_message(f"Network configuration failed: {e}")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Unexpected error: {e}")
+            self.log_message(f"Network configuration error: {e}")
+            
+    def validate_ip(self, ip):
+        """Validate IP address format"""
+        try:
+            parts = ip.split('.')
+            if len(parts) != 4:
+                return False
+            for part in parts:
+                if not 0 <= int(part) <= 255:
+                    return False
+            return True
+        except:
+            return False
         
     def update_thread_stats(self, event=None):
         """Update statistics display for selected thread"""
