@@ -163,6 +163,7 @@ class UDPReceiverGUI:
         burst_count = 0
         burst_start = None
         burst_last = None
+        total_bytes = 0
 
         self.log_message(f"{thread_name}: Listening for broadcasts on port {port}...")
 
@@ -170,22 +171,26 @@ class UDPReceiverGUI:
             try:
                 data, addr = sock.recvfrom(self.PACKET_SIZE)
                 now = time.time()
-                self.log_message(f"{thread_name}: Received packet from {addr}")
+                packet_size = len(data)
+                self.log_message(f"{thread_name}: Received packet from {addr} ({packet_size} bytes)")
                 if burst_count == 0:
                     burst_start = now
+                    total_bytes = 0
                 burst_last = now
                 burst_count += 1
+                total_bytes += packet_size
             except socket.timeout:
                 if burst_count > 0:
                     elapsed = burst_last - burst_start
-                    mb_recv = burst_count * self.PACKET_SIZE / (1024 * 1024)
+                    mb_recv = total_bytes / (1024 * 1024)
                     mbps = mb_recv * 8 / elapsed
                     with lock:
                         statistics.append((thread_name, burst_start, burst_last, burst_count, mb_recv, mbps))
-                    self.log_message(f"{thread_name}: Burst ended. Packets: {burst_count}, MiB: {mb_recv:.2f}, Mbps: {mbps:.2f}")
+                    self.log_message(f"{thread_name}: Burst ended. Packets: {burst_count}, Bytes: {total_bytes}, MiB: {mb_recv:.2f}, Mbps: {mbps:.2f}")
                     burst_count = 0
                     burst_start = None
                     burst_last = None
+                    total_bytes = 0
                 if stop_event.is_set():
                     break
                 self.log_message(f"{thread_name}: Waiting for data...")
@@ -194,9 +199,11 @@ class UDPReceiverGUI:
                     now = time.time()
                     if burst_count == 0:
                         burst_start = now
+                        total_bytes = 0
                     burst_last = now
                     burst_count += 1
-                    self.log_message(f"{thread_name}: Received oversized packet")
+                    total_bytes += self.PACKET_SIZE  # Oversized packet, use max size
+                    self.log_message(f"{thread_name}: Received oversized packet (>{self.PACKET_SIZE} bytes)")
                 else:
                     self.log_message(f"{thread_name}: Socket error: {e}")
                     break
