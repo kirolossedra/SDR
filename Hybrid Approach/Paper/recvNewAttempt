@@ -3,10 +3,12 @@ import time
 import threading
 from collections import deque
 from tqdm import tqdm
+
 # Configuration
 PORT = 5005
-PACKET_SIZE = 1024 # Big enough for any UDP datagram
-IDLE_TIMEOUT = 1.0 # Seconds of silence → burst ends
+PACKET_SIZE = 1024  # Big enough for any UDP datagram
+IDLE_TIMEOUT = 1.0  # Seconds of silence → burst ends
+
 def receiver_function(stop_event, statistics, lock):
     # Set up UDP socket for broadcast
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -40,7 +42,7 @@ def receiver_function(stop_event, statistics, lock):
                 mbps = mb_recv * 8 / elapsed
                 with lock:
                     statistics.append((thread_name, burst_start, burst_last, burst_count, mb_recv, mbps))
-                print(f"{thread_name}: Burst ended. Packets: {burst_count}, MiB: {mb_recv:.2f}, Mbps: {mbps:.2f}")
+                print(f"{thread_name}: Burst ended. Packets: {burst_count}, MiB: {mb_recv:.2f}, (Throughput {thread_name}: {mbps:.2f} Mbps)")
                 burst_count = 0
                 burst_start = None
                 burst_last = None
@@ -59,6 +61,7 @@ def receiver_function(stop_event, statistics, lock):
                 raise
     sock.close()
     print(f"{thread_name}: Stopped.")
+
 def main():
     # Prompt user for number of threads
     N = int(input("Enter the number of threads: "))
@@ -106,10 +109,11 @@ def main():
         groups.append(current_group)
     # Display summary
     print("\nSummary of Burst Throughputs:")
+    print("{:<20} {:<20} {:<}".format("Start Time", "End Time", "Throughputs (Mbps)"))
     for group in groups:
         # Sort group by thread number
         group.sort(key=lambda x: int(x[0].split('-')[1]))
-        # Get start and end times (using the first one as representative)
+        # Get start and end times
         burst_start = group[0][1]
         burst_last = group[0][2]
         start_str = time.strftime('%H:%M:%S', time.localtime(burst_start))
@@ -118,7 +122,8 @@ def main():
         throughputs = [f"{s[0]}: {s[5]:.2f}" for s in group]
         thread_mbps = [s[5] for s in group]
         avg_mbps = sum(thread_mbps) / len(thread_mbps) if thread_mbps else 0
-        throughputs_str = ', '.join(throughputs)
-        print(f"Burst {start_str} - {end_str}: {throughputs_str}, Average: {avg_mbps:.2f}")
+        throughputs_str = ', '.join(throughputs) + f", Average: {avg_mbps:.2f}"
+        print("{:<20} {:<20} ({})".format(start_str, end_str, throughputs_str))
+
 if __name__ == "__main__":
     main()
