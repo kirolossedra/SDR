@@ -110,6 +110,7 @@ def main():
     # Display summary
     print("\nSummary of Burst Throughputs:")
     print("{:<20} {:<20} {:<}".format("Start Time", "End Time", "Throughputs (Mbps)"))
+    burst_averages = []
     for group in groups:
         # Sort group by thread number
         group.sort(key=lambda x: int(x[0].split('-')[1]))
@@ -122,8 +123,13 @@ def main():
         throughputs = [f"{s[0]}: {s[5]:.2f}" for s in group]
         thread_mbps = [s[5] for s in group]
         avg_mbps = sum(thread_mbps) / len(thread_mbps) if thread_mbps else 0
+        burst_averages.append(avg_mbps)
         throughputs_str = ', '.join(throughputs) + f", Average: {avg_mbps:.2f}"
         print("{:<20} {:<20} ({})".format(start_str, end_str, throughputs_str))
+    # Calculate and print average of all burst averages
+    if burst_averages:
+        overall_avg = sum(burst_averages) / len(burst_averages)
+        print(f"\nAverage of all bursts: {overall_avg:.2f} Mbps")
 
 if __name__ == "__main__":
     main()
