@@ -1,0 +1,38 @@
+0.5 ms
+
+
+
+
+
+
+
+
+
+1 ms
+
+
+waterloolab@eduroam-campus-10-36-33-34 Aug16 Tests Scalability % python3 sender.py
+Sent 3483 packets (3.40 MiB) in 5.00s — throughput: 5.44 Mbps
+waterloolab@eduroam-campus-10-36-33-34 Aug16 Tests Scalability % python3 sender.py
+Sent 3483 packets (3.40 MiB) in 5.00s — throughput: 5.44 Mbps
+waterloolab@eduroam-campus-10-36-33-34 Aug16 Tests Scalability % python3 sender.py
+Sent 3470 packets (3.39 MiB) in 5.00s — throughput: 5.42 Mbps
+waterloolab@eduroam-campus-10-36-33-34 Aug16 Tests Scalability % python3 sender.py
+Sent 3478 packets (3.40 MiB) in 5.00s — throughput: 5.43 Mbps
+waterloolab@eduroam-campus-10-36-33-34 Aug16 Tests Scalability % python3 sender.py
+Sent 3469 packets (3.39 MiB) in 5.00s — throughput: 5.42 Mbps
+waterloolab@eduroam-campus-10-36-33-34 Aug16 Tests Scalability % python3 sender.py
+Sent 3483 packets (3.40 MiB) in 5.00s — throughput: 5.44 Mbps
+waterloolab@eduroam-campus-10-36-33-34 Aug16 Tests Scalability % python3 sender.py
+Sent 3475 packets (3.39 MiB) in 5.00s — throughput: 5.43 Mbps
+waterloolab@eduroam-campus-10-36-33-34 Aug16 Tests Scalability % python3 sender.py
+Sent 3469 packets (3.39 MiB) in 5.00s — throughput: 5.42 Mbps
+waterloolab@eduroam-campus-10-36-33-34 Aug16 Tests Scalability % python3 sender.py
+Sent 3467 packets (3.39 MiB) in 5.00s — throughput: 5.42 Mbps
+waterloolab@eduroam-campus-10-36-33-34 Aug16 Tests Scalability % python3 sender.py
+Sent 3472 packets (3.39 MiB) in 5.00s — throughput: 5.42 Mbps
+
+
+5 ms
+
+
