@@ -21,7 +21,7 @@ def receiver_function(stop_event, statistics, lock, log_callback):
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 256 * 1024)
     sock.bind(("", PORT))
-    sock.settimeout(IDLE_TIMEOUT)
+    sock.settimeout(0.5)  # Shorter timeout for more responsive stopping
 
     burst_count = 0
     burst_start = None
@@ -229,8 +229,11 @@ class UDPReceiverGUI:
             self.log_message("Stopping threads...")
             self.stop_event.set()
             
+            # Give threads time to see the stop event and exit gracefully
             for thread in self.threads:
-                thread.join()
+                thread.join(timeout=2.0)  # Wait max 2 seconds per thread
+                if thread.is_alive():
+                    self.log_message(f"Warning: {thread.name} did not stop gracefully")
                 
             self.is_running = False
             self.start_button.config(state="normal")
